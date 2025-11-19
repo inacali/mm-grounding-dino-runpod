@@ -16,8 +16,12 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"Loading MM-Grounding-DINO model {MODEL_ID} on {DEVICE}...")
 
-processor = AutoProcessor.from_pretrained(MODEL_ID)
-model = AutoModelForZeroShotObjectDetection.from_pretrained(MODEL_ID).to(DEVICE)
+# IMPORTANT: trust_remote_code=True so Transformers can load the custom mm-grounding-dino classes
+processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+model = AutoModelForZeroShotObjectDetection.from_pretrained(
+    MODEL_ID,
+    trust_remote_code=True,
+).to(DEVICE)
 model.eval()
 
 app = FastAPI(title="MM-Grounding-DINO Region Proposals")
@@ -58,7 +62,7 @@ def detect(req: DetectRequest):
     inputs = processor(
         images=image,
         text=text_labels,
-        return_tensors="pt"
+        return_tensors="pt",
     ).to(DEVICE)
 
     with torch.no_grad():
@@ -85,4 +89,3 @@ def detect(req: DetectRequest):
         )
 
     return DetectResponse(detections=detections)
-
