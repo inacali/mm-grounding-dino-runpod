@@ -14,8 +14,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (for multi-arch builds, optional)
-        uses: docker/setup-qemu-action@v3
+      # Free up disk space on the GitHub runner (important for big CUDA images)
+      - name: Free disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h
+
+          # Remove big SDKs / toolchains we don't need
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+
+          echo "Disk space after cleanup:"
+          df -h
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -35,3 +46,5 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/mm-grounding-dino:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/mm-grounding-dino:${{ github.sha }}
+          # We only need linux/amd64 for Runpod, don't build multi-arch
+          platforms: linux/amd64
