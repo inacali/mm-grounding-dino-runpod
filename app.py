@@ -9,7 +9,7 @@ from transformers import (
     AutoModelForZeroShotObjectDetection,
     AutoProcessor,
 )
-from transformers.image_utils import load_image
+from PIL import Image
 
 MODEL_ID = "openmmlab-community/mm_grounding_dino_tiny_o365v1_goldg_v3det"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -64,48 +64,64 @@ def healthz():
 
 @app.post("/detect", response_model=DetectResponse)
 def detect(req: DetectRequest):
-    # Decode base64 image
+    print(">>>> USING PIL IMAGE LOADER <<<<")
+    # 1. Decode base64 → raw bytes
     try:
         image_bytes = base64.b64decode(req.image_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64 image: {e}")
 
-    # Load image using HF utility (expects raw bytes, NOT BytesIO)
+    # 2. Load image via PIL (robust and explicit)
     try:
-        image = load_image(image_bytes)  # Option A
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
 
-    # MM-Grounding-DINO expects list-of-lists for text prompts
-    text_labels = [req.prompts]
+    # 3. MM-Grounding-DINO expects list-of-lists for prompts
+    try:
+        text_labels = [req.prompts]
+        if not isinstance(req.prompts, list) or len(req.prompts) == 0:
+            raise ValueError("prompts must be a non-empty list of strings")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid prompts: {e}")
 
-    # Preprocess inputs
-    inputs = processor(
-        images=image,
-        text=text_labels,
-        return_tensors="pt",
-    ).to(DEVICE)
+    # 4. Preprocess
+    try:
+        inputs = processor(
+            images=image,
+            text=text_labels,
+            return_tensors="pt",
+        ).to(DEVICE)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error in preprocessing: {e}")
 
-    # Run model
-    with torch.no_grad():
-        outputs = model(**inputs)
+    # 5. Forward pass
+    try:
+        with torch.no_grad():
+            outputs = model(**inputs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model inference error: {e}")
 
-    # Post-process detections
-    processed = processor.post_process_grounded_object_detection(
-        outputs,
-        threshold=req.box_threshold,
-        target_sizes=[(image.height, image.width)],
-    )[0]
+    # 6. Post-process detections
+    try:
+        processed = processor.post_process_grounded_object_detection(
+            outputs,
+            threshold=req.box_threshold,
+            target_sizes=[(image.height, image.width)],
+        )[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Post-processing error: {e}")
 
+    # 7. Format response
     detections = []
     for box, score, label in zip(
         processed["boxes"],
         processed["scores"],
-        processed["labels"]
+        processed["labels"],
     ):
         detections.append(
             Detection(
-                label=label,
+                label=str(label),
                 score=float(score),
                 box_xyxy=[float(x) for x in box],
                 image_width=image.width,
