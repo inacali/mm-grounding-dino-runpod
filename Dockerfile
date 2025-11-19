@@ -6,7 +6,7 @@ WORKDIR /app
 # Install Python deps, avoid caching wheels to keep layers smaller
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
-      "transformers[torch]==4.43.3" \
+      "transformers[torch]==4.45.0" \
       accelerate \
       fastapi \
       "uvicorn[standard]" \
